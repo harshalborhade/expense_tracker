@@ -52,3 +52,17 @@ func InitDB(dbPath string) (*gorm.DB, error) {
 
 	return db, nil
 }
+
+// Helper to look up account mapping
+func GetLedgerAccountName(db *gorm.DB, externalID, defaultName string) string {
+	var mapping AccountMap
+	result := db.First(&mapping, "external_id = ?", externalID)
+
+	if result.Error == nil && mapping.LedgerAccount != "" {
+		return mapping.LedgerAccount
+	}
+
+	// Fallback if not mapped yet
+	// Format: Assets:FIXME:ExternalID
+	return "Assets:FIXME:" + externalID
+}

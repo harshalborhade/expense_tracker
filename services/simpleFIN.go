@@ -59,7 +59,8 @@ func (s *SimpleFinService) Sync() error {
 		return errors.New("SIMPLEFIN_ACCESS_URL is missing in .env")
 	}
 
-	fmt.Printf("Debug: Fetching from %s...\n", s.AccessURL)
+	// Log the URL we are hitting
+	fmt.Printf("Debug: Fetching from %s\n", s.AccessURL)
 
 	resp, err := http.Get(s.AccessURL)
 	if err != nil {
@@ -73,11 +74,18 @@ func (s *SimpleFinService) Sync() error {
 
 	var sfResp SFResponse
 	if err := json.NewDecoder(resp.Body).Decode(&sfResp); err != nil {
-		return err
+		// This will catch if the JSON format is unexpected
+		return fmt.Errorf("JSON Decode Error: %v", err)
 	}
+
+	// DEBUG LOGGING
+	fmt.Printf("Debug: API returned %d Accounts\n", len(sfResp.Accounts))
 
 	// Process Accounts & Transactions
 	for _, acc := range sfResp.Accounts {
+
+		fmt.Printf("   -> Account: %s (%s) has %d transactions\n", acc.Name, acc.ID, len(acc.Transactions))
+
 		s.ensureAccountExists(acc.ID, acc.Name)
 
 		for _, t := range acc.Transactions {
@@ -86,10 +94,10 @@ func (s *SimpleFinService) Sync() error {
 			amt, _ := strconv.ParseFloat(t.Amount, 64)
 
 			var existing database.Transaction
-			err := s.DB.First(&existing, "id = ?", t.ID).Error
+			result := s.DB.Limit(1).Find(&existing, "id = ?", t.ID)
 
-			if err == gorm.ErrRecordNotFound {
-				// Create New
+			if result.RowsAffected == 0 {
+				// New Transaction
 				tx := database.Transaction{
 					ID:             t.ID,
 					Provider:       "simplefin",
@@ -103,7 +111,7 @@ func (s *SimpleFinService) Sync() error {
 				}
 				s.DB.Create(&tx)
 			} else {
-				// Update Existing
+				// Update existing
 				existing.Amount = amt
 				existing.Date = dateStr
 				if !existing.IsReviewed {

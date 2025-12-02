@@ -87,10 +87,13 @@ func (s *SplitwiseService) GetMyID() error {
 // 2. Sync Expenses
 func (s *SplitwiseService) Sync() error {
 	if s.APIKey == "" {
-		return nil // specific error not needed, just skip
+		return nil
 	}
 
-	// Ensure we know who "I" am
+	// FIX 1: Ensure the Splitwise "Account" exists in the map
+	// This stops the "record not found" error during export
+	s.ensureAccountExists("splitwise_group", "Splitwise Shared Expenses")
+
 	if err := s.GetMyID(); err != nil {
 		return err
 	}
@@ -163,13 +166,14 @@ func (s *SplitwiseService) Sync() error {
 
 		// Upsert
 		var existing database.Transaction
-		err := s.DB.First(&existing, "id = ?", txID).Error
+		result := s.DB.Limit(1).Find(&existing, "id = ?", txID)
 
-		if err == gorm.ErrRecordNotFound {
+		if result.RowsAffected == 0 {
+			// Record doesn't exist -> Create it
 			tx := database.Transaction{
 				ID:             txID,
 				Provider:       providerLabel,
-				AccountID:      "splitwise_group", // could be group_id
+				AccountID:      "splitwise_group",
 				Date:           dateStr,
 				Payee:          exp.Description,
 				Amount:         myShare,
@@ -180,7 +184,7 @@ func (s *SplitwiseService) Sync() error {
 			s.DB.Create(&tx)
 			count++
 		} else {
-			// Update logic if needed
+			// Record exists -> Update it
 			existing.Amount = myShare
 			existing.Date = dateStr
 			if !existing.IsReviewed {
@@ -192,4 +196,17 @@ func (s *SplitwiseService) Sync() error {
 
 	fmt.Printf("✅ Synced %d Splitwise Expenses\n", count)
 	return nil
+}
+
+func (s *SplitwiseService) ensureAccountExists(id, name string) {
+	var count int64
+	s.DB.Model(&database.AccountMap{}).Where("external_id = ?", id).Count(&count)
+	if count == 0 {
+		s.DB.Create(&database.AccountMap{
+			ExternalID:    id,
+			Provider:      "splitwise",
+			Name:          name,
+			LedgerAccount: "Liabilities:Payable:Splitwise", // Default
+		})
+	}
 }

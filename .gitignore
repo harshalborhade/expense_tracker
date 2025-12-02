@@ -1,5 +1,6 @@
 .spec/
-.data/
+data/
+my_transactions/
 
 .env
 *.exe
