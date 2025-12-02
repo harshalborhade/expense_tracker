@@ -8,58 +8,44 @@ import (
 	"gorm.io/gorm"
 )
 
-// PlaidItem stores the connection credentials for a Bank
-type PlaidItem struct {
-	ID          uint   `gorm:"primaryKey"`
-	ItemID      string `gorm:"unique"`
-	AccessToken string
-	NextCursor  string // Used for incremental syncing
-	Institution string // e.g., "Chase"
-}
+const StorageDirPerms = 0755
 
-// AccountMap links a Plaid/Splitwise ID to a Ledger Account Name
+// AccountMap links SimpleFIN Account IDs to Ledger Account Names
 type AccountMap struct {
-	ExternalID    string `gorm:"primaryKey"` // Plaid AccountID or Splitwise GroupID
-	Name          string // Readable Name (e.g., "Chase Sapphire")
-	Provider      string // "plaid" or "splitwise"
-	LedgerAccount string // The output string (e.g., "Liabilities:US:Chase")
+	ExternalID    string `gorm:"primaryKey"`
+	Provider      string // "simplefin"
+	Name          string
+	LedgerAccount string
 }
 
 // Transaction represents a unified financial event
 type Transaction struct {
-	ID        string `gorm:"primaryKey"` // Plaid Transaction ID or "sw_{id}"
-	Provider  string `gorm:"index"`      // "plaid" or "splitwise"
-	AccountID string `gorm:"index"`      // Foreign Key to AccountMap.ExternalID
+	ID        string `gorm:"primaryKey"`
+	Provider  string `gorm:"index"`
+	AccountID string `gorm:"index"`
 
 	Date     string
 	Payee    string
-	Amount   float64 // Negative = Outflow, Positive = Inflow
+	Amount   float64
 	Currency string
 
-	// User Editable Fields
-	LedgerCategory string // e.g., "Expenses:Food"
+	LedgerCategory string
 	Notes          string
 	IsReviewed     bool `gorm:"default:false"`
 }
 
-// Permission 0755: Owner(rwx), Group(rx), Others(rx)
-const StorageDirPerms = 0755
-
-// InitDB sets up the SQLite connection
 func InitDB(dbPath string) (*gorm.DB, error) {
-	// 1. Ensure the directory exists
 	dir := filepath.Dir(dbPath)
 	if err := os.MkdirAll(dir, StorageDirPerms); err != nil {
 		return nil, err
 	}
 
-	// 2. Open DB
 	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
 	if err != nil {
 		return nil, err
 	}
 
-	err = db.AutoMigrate(&PlaidItem{}, &AccountMap{}, &Transaction{})
+	err = db.AutoMigrate(&AccountMap{}, &Transaction{})
 	if err != nil {
 		return nil, err
 	}
