@@ -3,6 +3,7 @@ package database
 import (
 	"os"
 	"path/filepath"
+	"time" // Added time
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -10,12 +11,18 @@ import (
 
 const StorageDirPerms = 0755
 
-// AccountMap links SimpleFIN Account IDs to Ledger Account Names
+// AccountMap links External IDs to Ledger Names AND stores Balances
 type AccountMap struct {
 	ExternalID    string `gorm:"primaryKey"`
-	Provider      string // "simplefin"
+	Provider      string // "simplefin" or "splitwise"
 	Name          string
 	LedgerAccount string
+
+	// New Balance Fields
+	CurrentBalance   float64
+	AvailableBalance float64
+	Currency         string
+	LastUpdated      time.Time
 }
 
 // Transaction represents a unified financial event
@@ -61,8 +68,5 @@ func GetLedgerAccountName(db *gorm.DB, externalID, defaultName string) string {
 	if result.Error == nil && mapping.LedgerAccount != "" {
 		return mapping.LedgerAccount
 	}
-
-	// Fallback if not mapped yet
-	// Format: Assets:FIXME:ExternalID
 	return "Assets:FIXME:" + externalID
 }

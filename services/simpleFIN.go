@@ -40,10 +40,12 @@ type SFResponse struct {
 }
 
 type SFAccount struct {
-	ID           string          `json:"id"`
-	Name         string          `json:"name"`
-	Currency     string          `json:"currency"`
-	Transactions []SFTransaction `json:"transactions"`
+	ID               string          `json:"id"`
+	Name             string          `json:"name"`
+	Currency         string          `json:"currency"`
+	Balance          string          `json:"balance"`           // String from API
+	AvailableBalance string          `json:"available-balance"` // String from API
+	Transactions     []SFTransaction `json:"transactions"`
 }
 
 type SFTransaction struct {
@@ -86,7 +88,12 @@ func (s *SimpleFinService) Sync() error {
 
 		fmt.Printf("   -> Account: %s (%s) has %d transactions\n", acc.Name, acc.ID, len(acc.Transactions))
 
-		s.ensureAccountExists(acc.ID, acc.Name)
+		// --- NEW: Parse Balances ---
+		currBal, _ := strconv.ParseFloat(acc.Balance, 64)
+		availBal, _ := strconv.ParseFloat(acc.AvailableBalance, 64)
+
+		// --- NEW: Update Account Map with Balances ---
+		s.upsertAccount(acc.ID, acc.Name, acc.Currency, currBal, availBal)
 
 		for _, t := range acc.Transactions {
 			tm := time.Unix(t.Posted, 0)
@@ -125,15 +132,29 @@ func (s *SimpleFinService) Sync() error {
 	return nil
 }
 
-func (s *SimpleFinService) ensureAccountExists(id, name string) {
-	var count int64
-	s.DB.Model(&database.AccountMap{}).Where("external_id = ?", id).Count(&count)
-	if count == 0 {
+// Renamed from ensureAccountExists to upsertAccount to handle updates
+func (s *SimpleFinService) upsertAccount(id, name, currency string, balance, available float64) {
+	var acc database.AccountMap
+	result := s.DB.Limit(1).Find(&acc, "external_id = ?", id)
+
+	if result.RowsAffected == 0 {
+		// Create new
 		s.DB.Create(&database.AccountMap{
-			ExternalID:    id,
-			Provider:      "simplefin",
-			Name:          name,
-			LedgerAccount: "Assets:FIXME:" + id,
+			ExternalID:       id,
+			Provider:         "simplefin",
+			Name:             name,
+			LedgerAccount:    "Assets:FIXME:" + id,
+			Currency:         currency,
+			CurrentBalance:   balance,
+			AvailableBalance: available,
+			LastUpdated:      time.Now(),
 		})
+	} else {
+		// Update existing balance
+		acc.CurrentBalance = balance
+		acc.AvailableBalance = available
+		acc.Currency = currency
+		acc.LastUpdated = time.Now()
+		s.DB.Save(&acc)
 	}
 }

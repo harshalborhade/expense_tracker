@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Expense Tracker</title>
+    <style>
+        :root { --primary: #2563eb; --bg: #f1f5f9; --surface: #ffffff; --border: #e2e8f0; --text: #0f172a; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 0; }
+        
+        /* Layout */
+        .navbar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 10; }
+        .brand { font-weight: 700; font-size: 1.25rem; display: flex; align-items: center; gap: 10px; }
+        .container { max-width: 1400px; margin: 2rem auto; padding: 0 1rem; }
+        
+        /* Tabs */
+        .nav-tabs { display: flex; gap: 20px; }
+        .nav-tab { cursor: pointer; padding: 5px 0; color: #64748b; font-weight: 500; position: relative; }
+        .nav-tab.active { color: var(--primary); }
+        .nav-tab.active::after { content: ''; position: absolute; bottom: -21px; left: 0; right: 0; height: 2px; background: var(--primary); }
+        
+        /* Buttons */
+        .btn { background: var(--text); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; transition: opacity 0.2s; }
+        .btn:hover { opacity: 0.9; }
+        .btn-sm { padding: 4px 10px; font-size: 0.8rem; }
+        .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+
+        /* Tables */
+        .card { background: var(--surface); border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); overflow: hidden; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th { text-align: left; background: #f8fafc; padding: 12px 16px; border-bottom: 1px solid var(--border); color: #64748b; font-weight: 600; }
+        td { padding: 12px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+        tr:last-child td { border-bottom: none; }
+        tr:hover { background: #f8fafc; }
+
+        /* Inputs */
+        input[type="text"] { width: 100%; box-sizing: border-box; padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px; font-size: 0.9rem; transition: border 0.2s; }
+        input[type="text"]:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,0.1); }
+        
+        /* Status Indicators */
+        .badge { padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+        .badge-pending { background: #fff7ed; color: #c2410c; }
+        .badge-reviewed { background: #ecfdf5; color: #047857; }
+        
+        /* Money */
+        .amt { font-family: 'SF Mono', Consolas, monospace; font-weight: 500; }
+        .amt.neg { color: var(--text); }
+        .amt.pos { color: #059669; }
+
+        /* Helper for Accounts */
+        .type-select { margin-bottom: 5px; font-size: 0.8rem; color: #64748b; display: flex; gap: 10px; }
+        .type-option { cursor: pointer; border-bottom: 1px dotted #94a3b8; }
+        .type-option:hover { color: var(--primary); border-bottom-style: solid; }
+
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+    <nav class="navbar">
+        <div class="brand">
+            <span>Ledger Hub</span>
+            <div class="nav-tabs" style="margin-left: 30px;">
+                <div class="nav-tab active" onclick="switchTab('transactions')">Transactions</div>
+                <div class="nav-tab" onclick="switchTab('accounts')">Accounts & Mapping</div>
+            </div>
+        </div>
+        <div>
+            <button class="btn btn-outline" id="syncBtn" onclick="triggerSync()">Sync Now</button>
+        </div>
+    </nav>
+
+    <div class="container">
+        
+        <!-- TRANSACTIONS VIEW -->
+        <div id="view-transactions">
+            <div class="card">
+                <table>
+                    <thead>
+                        <tr>
+                            <th width="120">Date</th>
+                            <th width="25%">Payee</th>
+                            <th width="120">Amount</th>
+                            <th width="35%">Category (Ledger Account)</th>
+                            <th>Source Account</th>
+                            <th width="50"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="tx-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ACCOUNTS VIEW -->
+        <div id="view-accounts" class="hidden">
+            <div class="card">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Bank / Provider</th>
+                            <th>Account Name (External)</th>
+                            <th>Balance</th>
+                            <th>Mapped Ledger Account</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="acc-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+
+    <datalist id="category-list"></datalist>
+
+<script>
+    let transactions = [];
+    let accounts = [];
+    
+    // On Load
+    document.addEventListener('DOMContentLoaded', () => {
+        loadData();
+    });
+
+    async function loadData() {
+        // Load Cats
+        const catResp = await fetch('/api/categories');
+        const cats = await catResp.json();
+        document.getElementById('category-list').innerHTML = cats.map(c => `<option value="${c}">`).join('');
+
+        // Load Accounts
+        const accResp = await fetch('/api/accounts');
+        accounts = await accResp.json();
+        renderAccounts();
+
+        // Load Transactions
+        const txResp = await fetch('/api/transactions');
+        transactions = await txResp.json();
+        renderTransactions();
+    }
+
+    // --- RENDERERS ---
+
+    function renderTransactions() {
+        const tbody = document.getElementById('tx-body');
+        tbody.innerHTML = transactions.map(t => {
+            const isPos = t.amount > 0; // In DB, positive is inflow, negative is outflow? 
+            // DB: -50.00 is spending. +50 is income.
+            // UI: let's show standard numbers.
+            
+            const amtClass = t.amount > 0 ? 'pos' : 'neg';
+            const statusBadge = t.is_reviewed 
+                ? `<span class="badge badge-reviewed">OK</span>` 
+                : `<span class="badge badge-pending">NEW</span>`;
+
+            return `
+            <tr id="row-${t.id}">
+                <td style="color:#64748b; font-size:0.85rem;">${t.date}</td>
+                <td>
+                    <input type="text" value="${t.payee}" 
+                           onblur="updateTx('${t.id}', 'payee', this.value)">
+                </td>
+                <td class="amt ${amtClass}">${t.amount.toFixed(2)}</td>
+                <td>
+                    <input type="text" value="${t.category}" list="category-list" 
+                           placeholder="Expenses:?" 
+                           style="${t.is_reviewed ? '' : 'border-color:#f59e0b;'}"
+                           onblur="updateTx('${t.id}', 'category', this.value)">
+                </td>
+                <td style="font-size:0.8rem; color:#64748b;">
+                    ${t.account_name}
+                    ${t.note ? `<div style="color:#94a3b8; font-size:0.75rem;">${t.note}</div>` : ''}
+                </td>
+                <td>${statusBadge}</td>
+            </tr>`;
+        }).join('');
+    }
+
+    function renderAccounts() {
+        const tbody = document.getElementById('acc-body');
+        tbody.innerHTML = accounts.map(a => {
+            return `
+            <tr>
+                <td style="font-size:0.85rem; color:#64748b;">${a.Provider.toUpperCase()}</td>
+                <td><b>${a.Name}</b><br><span style="font-size:0.75rem; color:#94a3b8;">${a.ExternalID}</span></td>
+                <td class="amt">${a.CurrentBalance.toFixed(2)} ${a.Currency}</td>
+                <td>
+                    <div class="type-select">
+                        <span>Quick Set:</span>
+                        <span class="type-option" onclick="setMapping('${a.ExternalID}', 'Assets:US:Bank')">Bank</span>
+                        <span class="type-option" onclick="setMapping('${a.ExternalID}', 'Liabilities:US:CreditCard')">Credit Card</span>
+                    </div>
+                    <input type="text" id="map-${a.ExternalID}" value="${a.LedgerAccount}">
+                </td>
+                <td>
+                    <button class="btn btn-sm" onclick="saveAccount('${a.ExternalID}')">Save</button>
+                </td>
+            </tr>`;
+        }).join('');
+    }
+
+    // --- LOGIC ---
+
+    async function updateTx(id, field, val) {
+        const tx = transactions.find(t => t.id === id);
+        if (tx[field] === val) return; // No change
+
+        // Optimistic UI update
+        tx[field] = val;
+        tx.is_reviewed = true;
+        renderTransactions(); // Refresh to show "OK" badge
+
+        // Send API
+        await fetch('/api/transactions/update', {
+            method: 'POST',
+            body: JSON.stringify({ id: tx.id, payee: tx.payee, category: tx.category, note: tx.note })
+        });
+    }
+
+    function setMapping(id, prefix) {
+        // Helper to pre-fill the input
+        const input = document.getElementById(`map-${id}`);
+        const currentName = accounts.find(a => a.ExternalID === id).Name.replace(/\s+/g, '');
+        // Example: Assets:US:Bank:ChaseChecking
+        input.value = `${prefix}:${currentName}`;
+    }
+
+    async function saveAccount(id) {
+        const val = document.getElementById(`map-${id}`).value;
+        await fetch('/api/accounts/update', {
+            method: 'POST',
+            body: JSON.stringify({ id: id, ledger_account: val })
+        });
+        alert('Mapping Saved!');
+    }
+
+    async function triggerSync() {
+        const btn = document.getElementById('syncBtn');
+        btn.innerText = "Syncing...";
+        btn.disabled = true;
+        
+        await fetch('/api/sync');
+        
+        // Wait 2s then reload data
+        setTimeout(async () => {
+            await loadData();
+            btn.innerText = "Sync Now";
+            btn.disabled = false;
+        }, 2000);
+    }
+
+    function switchTab(tab) {
+        document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+        event.target.classList.add('active');
+
+        document.getElementById('view-transactions').classList.add('hidden');
+        document.getElementById('view-accounts').classList.add('hidden');
+        document.getElementById('view-' + tab).classList.remove('hidden');
+    }
+</script>
+
+</body>
+</html>
