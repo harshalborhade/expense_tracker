@@ -16,10 +16,11 @@ import (
 
 type SimpleFinService struct {
 	DB        *gorm.DB
-	AccessURL string // Store the URL directly in the struct
+	AccessURL string
+	Rules     *RuleEngine
 }
 
-func NewSimpleFinService(db *gorm.DB, accessURL string) *SimpleFinService {
+func NewSimpleFinService(db *gorm.DB, accessURL string, rules *RuleEngine) *SimpleFinService {
 	// Auto-correct URL: It must end in /accounts to get transaction data
 	if accessURL != "" && !strings.HasSuffix(accessURL, "/accounts") {
 		// Strip trailing slash if present
@@ -30,6 +31,7 @@ func NewSimpleFinService(db *gorm.DB, accessURL string) *SimpleFinService {
 	return &SimpleFinService{
 		DB:        db,
 		AccessURL: accessURL,
+		Rules:     rules,
 	}
 }
 
@@ -104,6 +106,13 @@ func (s *SimpleFinService) Sync() error {
 			result := s.DB.Limit(1).Find(&existing, "id = ?", t.ID)
 
 			if result.RowsAffected == 0 {
+
+				cat := "Expenses:Uncategorized"
+
+				if match := s.Rules.Apply(t.Description); match != "" {
+					cat = match
+				}
+
 				// New Transaction
 				tx := database.Transaction{
 					ID:             t.ID,
@@ -113,7 +122,7 @@ func (s *SimpleFinService) Sync() error {
 					Payee:          t.Description,
 					Amount:         amt,
 					Currency:       acc.Currency,
-					LedgerCategory: "Expenses:Uncategorized",
+					LedgerCategory: cat,
 					IsReviewed:     false,
 				}
 				s.DB.Create(&tx)
@@ -128,7 +137,7 @@ func (s *SimpleFinService) Sync() error {
 			}
 		}
 	}
-	fmt.Printf("✅ Synced %d Accounts via SimpleFIN\n", len(sfResp.Accounts))
+	fmt.Printf("Synced %d Accounts via SimpleFIN\n", len(sfResp.Accounts))
 	return nil
 }
 

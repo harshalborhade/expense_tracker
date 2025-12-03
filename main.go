@@ -17,6 +17,7 @@ var db *gorm.DB
 var sfService *services.SimpleFinService
 var swService *services.SplitwiseService
 var exportService *services.LedgerExportService
+var ruleEngine *services.RuleEngine
 
 func main() {
 	godotenv.Load()
@@ -29,8 +30,12 @@ func main() {
 	}
 
 	// 2. Init Services
-	sfService = services.NewSimpleFinService(db, os.Getenv("SIMPLEFIN_ACCESS_TOKEN"))
-	swService = services.NewSplitwiseService(db, os.Getenv("SPLITWISE_API_KEY"))
+	ruleEngine = services.NewRuleEngine(db)
+	seedDefaultRules(db)
+	ruleEngine.Reload()
+
+	sfService = services.NewSimpleFinService(db, os.Getenv("SIMPLEFIN_ACCESS_TOKEN"), ruleEngine)
+	swService = services.NewSplitwiseService(db, os.Getenv("SPLITWISE_API_KEY"), ruleEngine)
 
 	exportPath := os.Getenv("LEDGER_FILE_PATH")
 	exportService = services.NewLedgerExportService(db, exportPath)
@@ -50,6 +55,8 @@ func main() {
 	http.HandleFunc("/api/accounts", handleGetAccounts)
 	http.HandleFunc("/api/accounts/update", handleUpdateAccount)
 	http.HandleFunc("/api/categories", handleGetCategories)
+	http.HandleFunc("/api/rules", handleGetRules)       // GET to list
+	http.HandleFunc("/api/rules/add", handleCreateRule) // POST to add
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -81,4 +88,20 @@ func runFullSync() {
 func handleSync(w http.ResponseWriter, r *http.Request) {
 	go runFullSync()
 	w.Write([]byte(`{"status":"sync_started"}`))
+}
+
+func seedDefaultRules(db *gorm.DB) {
+	var count int64
+	db.Model(&database.CategoryRule{}).Count(&count)
+	if count == 0 {
+		fmt.Println("[INFO] Seeding default rules...")
+		rules := []database.CategoryRule{
+			{Priority: 10, Pattern: "(?i)uber|lyft", Category: "Expenses:Transport:Rideshare"},
+			// {Priority: 10, Pattern: "(?i)starbucks|peet's", Category: "Expenses:Food:Coffee"},
+			// {Priority: 10, Pattern: "(?i)safeway|trader joe", Category: "Expenses:Food:Groceries"},
+			// {Priority: 10, Pattern: "(?i)netflix|spotify", Category: "Expenses:Entertainment:Subscriptions"},
+			// {Priority: 50, Pattern: "(?i)salary|payroll", Category: "Income:Salary"}, // High priority
+		}
+		db.Create(&rules)
+	}
 }

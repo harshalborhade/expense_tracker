@@ -16,12 +16,14 @@ type SplitwiseService struct {
 	DB     *gorm.DB
 	APIKey string
 	UserID int // We need to know "Who am I?" to calculate shares
+	Rules  *RuleEngine
 }
 
-func NewSplitwiseService(db *gorm.DB, apiKey string) *SplitwiseService {
+func NewSplitwiseService(db *gorm.DB, apiKey string, rules *RuleEngine) *SplitwiseService {
 	return &SplitwiseService{
 		DB:     db,
 		APIKey: apiKey,
+		Rules:  rules,
 	}
 }
 
@@ -169,6 +171,13 @@ func (s *SplitwiseService) Sync() error {
 		result := s.DB.Limit(1).Find(&existing, "id = ?", txID)
 
 		if result.RowsAffected == 0 {
+
+			cat := "Expenses:Uncategorized"
+
+			if match := s.Rules.Apply(exp.Description); match != "" {
+				cat = match
+			}
+
 			// Record doesn't exist -> Create it
 			tx := database.Transaction{
 				ID:             txID,
@@ -178,7 +187,7 @@ func (s *SplitwiseService) Sync() error {
 				Payee:          exp.Description,
 				Amount:         myShare,
 				Currency:       exp.Currency,
-				LedgerCategory: "Expenses:Uncategorized",
+				LedgerCategory: cat,
 				IsReviewed:     false,
 			}
 			s.DB.Create(&tx)

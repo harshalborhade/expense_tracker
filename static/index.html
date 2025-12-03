@@ -23,10 +23,11 @@
         .btn { background: var(--text); color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; transition: opacity 0.2s; }
         .btn:hover { opacity: 0.9; }
         .btn-sm { padding: 4px 10px; font-size: 0.8rem; }
+        .btn-danger { background: #ef4444; }
         .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
 
         /* Tables */
-        .card { background: var(--surface); border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); overflow: hidden; }
+        .card { background: var(--surface); border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); overflow: hidden; margin-bottom: 20px; }
         table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
         th { text-align: left; background: #f8fafc; padding: 12px 16px; border-bottom: 1px solid var(--border); color: #64748b; font-weight: 600; }
         td { padding: 12px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; }
@@ -34,23 +35,24 @@
         tr:hover { background: #f8fafc; }
 
         /* Inputs */
-        input[type="text"] { width: 100%; box-sizing: border-box; padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px; font-size: 0.9rem; transition: border 0.2s; }
-        input[type="text"]:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,0.1); }
+        input[type="text"], input[type="number"] { width: 100%; box-sizing: border-box; padding: 6px 10px; border: 1px solid var(--border); border-radius: 4px; font-size: 0.9rem; transition: border 0.2s; }
+        input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,0.1); }
         
-        /* Status Indicators */
+        /* Specifics */
         .badge { padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
         .badge-pending { background: #fff7ed; color: #c2410c; }
         .badge-reviewed { background: #ecfdf5; color: #047857; }
-        
-        /* Money */
         .amt { font-family: 'SF Mono', Consolas, monospace; font-weight: 500; }
         .amt.neg { color: var(--text); }
         .amt.pos { color: #059669; }
-
-        /* Helper for Accounts */
         .type-select { margin-bottom: 5px; font-size: 0.8rem; color: #64748b; display: flex; gap: 10px; }
         .type-option { cursor: pointer; border-bottom: 1px dotted #94a3b8; }
         .type-option:hover { color: var(--primary); border-bottom-style: solid; }
+        
+        /* Form for Rules */
+        .rule-form { display: flex; gap: 10px; padding: 16px; background: #f8fafc; border-bottom: 1px solid var(--border); align-items: end; }
+        .form-group { display: flex; flex-direction: column; gap: 4px; }
+        .form-group label { font-size: 0.75rem; font-weight: 600; color: #64748b; }
 
         .hidden { display: none; }
     </style>
@@ -62,7 +64,8 @@
             <span>Ledger Hub</span>
             <div class="nav-tabs" style="margin-left: 30px;">
                 <div class="nav-tab active" onclick="switchTab('transactions')">Transactions</div>
-                <div class="nav-tab" onclick="switchTab('accounts')">Accounts & Mapping</div>
+                <div class="nav-tab" onclick="switchTab('accounts')">Accounts</div>
+                <div class="nav-tab" onclick="switchTab('rules')">Auto-Rules</div>
             </div>
         </div>
         <div>
@@ -72,7 +75,7 @@
 
     <div class="container">
         
-        <!-- TRANSACTIONS VIEW -->
+        <!-- 1. TRANSACTIONS TAB -->
         <div id="view-transactions">
             <div class="card">
                 <table>
@@ -81,8 +84,8 @@
                             <th width="120">Date</th>
                             <th width="25%">Payee</th>
                             <th width="120">Amount</th>
-                            <th width="35%">Category (Ledger Account)</th>
-                            <th>Source Account</th>
+                            <th width="35%">Category</th>
+                            <th>Account</th>
                             <th width="50"></th>
                         </tr>
                     </thead>
@@ -91,14 +94,14 @@
             </div>
         </div>
 
-        <!-- ACCOUNTS VIEW -->
+        <!-- 2. ACCOUNTS TAB -->
         <div id="view-accounts" class="hidden">
             <div class="card">
                 <table>
                     <thead>
                         <tr>
                             <th>Bank / Provider</th>
-                            <th>Account Name (External)</th>
+                            <th>Account Name</th>
                             <th>Balance</th>
                             <th>Mapped Ledger Account</th>
                             <th>Action</th>
@@ -109,6 +112,45 @@
             </div>
         </div>
 
+        <!-- 3. RULES TAB -->
+        <div id="view-rules" class="hidden">
+            <div class="card">
+                <!-- Add Rule Form -->
+                <div class="rule-form">
+                    <div class="form-group" style="flex: 1;">
+                        <label>Regex Pattern (e.g. ^Uber.*)</label>
+                        <input type="text" id="new-rule-pattern" placeholder="(?i)uber">
+                    </div>
+                    <div class="form-group" style="flex: 1;">
+                        <label>Category</label>
+                        <input type="text" id="new-rule-cat" list="category-list" placeholder="Expenses:Transport">
+                    </div>
+                    <div class="form-group" style="width: 80px;">
+                        <label>Priority</label>
+                        <input type="number" id="new-rule-prio" value="10">
+                    </div>
+                    <button class="btn" onclick="addRule()">Add Rule</button>
+                </div>
+
+                <!-- Rules Table -->
+                <table>
+                    <thead>
+                        <tr>
+                            <th width="80">Priority</th>
+                            <th>Regex Pattern</th>
+                            <th>Target Category</th>
+                            <th width="80">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rules-body"></tbody>
+                </table>
+            </div>
+            <p style="color: #64748b; font-size: 0.9rem; margin-top: 10px;">
+                * <b>Regex Note:</b> Use <code>(?i)</code> for case-insensitive matching. <br>
+                * <b>Priority:</b> Higher numbers run first. Use 50 for salary, 10 for generic matches.
+            </p>
+        </div>
+
     </div>
 
     <datalist id="category-list"></datalist>
@@ -116,70 +158,69 @@
 <script>
     let transactions = [];
     let accounts = [];
+    let rules = [];
     
-    // On Load
     document.addEventListener('DOMContentLoaded', () => {
         loadData();
     });
 
     async function loadData() {
-        // Load Cats
+        // Categories for autocomplete
         const catResp = await fetch('/api/categories');
         const cats = await catResp.json();
         document.getElementById('category-list').innerHTML = cats.map(c => `<option value="${c}">`).join('');
 
-        // Load Accounts
-        const accResp = await fetch('/api/accounts');
-        accounts = await accResp.json();
-        renderAccounts();
-
-        // Load Transactions
-        const txResp = await fetch('/api/transactions');
-        transactions = await txResp.json();
-        renderTransactions();
+        // Fetch all data in parallel
+        await Promise.all([
+            fetch('/api/transactions').then(r => r.json()).then(d => { transactions = d; renderTransactions(); }),
+            fetch('/api/accounts').then(r => r.json()).then(d => { accounts = d; renderAccounts(); }),
+            fetch('/api/rules').then(r => r.json()).then(d => { rules = d; renderRules(); })
+        ]);
     }
 
-    // --- RENDERERS ---
-
+    // --- RENDER TRANSACTIONS ---
     function renderTransactions() {
         const tbody = document.getElementById('tx-body');
         tbody.innerHTML = transactions.map(t => {
-            const isPos = t.amount > 0; // In DB, positive is inflow, negative is outflow? 
-            // DB: -50.00 is spending. +50 is income.
-            // UI: let's show standard numbers.
-            
             const amtClass = t.amount > 0 ? 'pos' : 'neg';
             const statusBadge = t.is_reviewed 
                 ? `<span class="badge badge-reviewed">OK</span>` 
                 : `<span class="badge badge-pending">NEW</span>`;
 
             return `
-            <tr id="row-${t.id}">
+            <tr>
                 <td style="color:#64748b; font-size:0.85rem;">${t.date}</td>
-                <td>
-                    <input type="text" value="${t.payee}" 
-                           onblur="updateTx('${t.id}', 'payee', this.value)">
-                </td>
+                <td><input type="text" value="${t.payee}" onblur="updateTx('${t.id}', 'payee', this.value)"></td>
                 <td class="amt ${amtClass}">${t.amount.toFixed(2)}</td>
                 <td>
                     <input type="text" value="${t.category}" list="category-list" 
-                           placeholder="Expenses:?" 
                            style="${t.is_reviewed ? '' : 'border-color:#f59e0b;'}"
                            onblur="updateTx('${t.id}', 'category', this.value)">
                 </td>
-                <td style="font-size:0.8rem; color:#64748b;">
-                    ${t.account_name}
-                    ${t.note ? `<div style="color:#94a3b8; font-size:0.75rem;">${t.note}</div>` : ''}
-                </td>
+                <td style="font-size:0.8rem; color:#64748b;">${t.account_name}</td>
                 <td>${statusBadge}</td>
             </tr>`;
         }).join('');
     }
 
+    async function updateTx(id, field, val) {
+        const tx = transactions.find(t => t.id === id);
+        if (tx[field] === val) return;
+        
+        tx[field] = val;
+        tx.is_reviewed = true;
+        renderTransactions(); 
+
+        await fetch('/api/transactions/update', {
+            method: 'POST',
+            body: JSON.stringify({ id: tx.id, payee: tx.payee, category: tx.category, note: tx.note })
+        });
+    }
+
+    // --- RENDER ACCOUNTS ---
     function renderAccounts() {
         const tbody = document.getElementById('acc-body');
-        tbody.innerHTML = accounts.map(a => {
-            return `
+        tbody.innerHTML = accounts.map(a => `
             <tr>
                 <td style="font-size:0.85rem; color:#64748b;">${a.Provider.toUpperCase()}</td>
                 <td><b>${a.Name}</b><br><span style="font-size:0.75rem; color:#94a3b8;">${a.ExternalID}</span></td>
@@ -192,36 +233,13 @@
                     </div>
                     <input type="text" id="map-${a.ExternalID}" value="${a.LedgerAccount}">
                 </td>
-                <td>
-                    <button class="btn btn-sm" onclick="saveAccount('${a.ExternalID}')">Save</button>
-                </td>
-            </tr>`;
-        }).join('');
-    }
-
-    // --- LOGIC ---
-
-    async function updateTx(id, field, val) {
-        const tx = transactions.find(t => t.id === id);
-        if (tx[field] === val) return; // No change
-
-        // Optimistic UI update
-        tx[field] = val;
-        tx.is_reviewed = true;
-        renderTransactions(); // Refresh to show "OK" badge
-
-        // Send API
-        await fetch('/api/transactions/update', {
-            method: 'POST',
-            body: JSON.stringify({ id: tx.id, payee: tx.payee, category: tx.category, note: tx.note })
-        });
+                <td><button class="btn btn-sm" onclick="saveAccount('${a.ExternalID}')">Save</button></td>
+            </tr>`).join('');
     }
 
     function setMapping(id, prefix) {
-        // Helper to pre-fill the input
         const input = document.getElementById(`map-${id}`);
-        const currentName = accounts.find(a => a.ExternalID === id).Name.replace(/\s+/g, '');
-        // Example: Assets:US:Bank:ChaseChecking
+        const currentName = accounts.find(a => a.ExternalID === id).Name.replace(/[^a-zA-Z0-9]/g, '');
         input.value = `${prefix}:${currentName}`;
     }
 
@@ -234,14 +252,55 @@
         alert('Mapping Saved!');
     }
 
+    // --- RENDER RULES ---
+    function renderRules() {
+        const tbody = document.getElementById('rules-body');
+        tbody.innerHTML = rules.map(r => `
+            <tr>
+                <td>${r.Priority}</td>
+                <td><code>${r.Pattern}</code></td>
+                <td>${r.Category}</td>
+                <td><button class="btn btn-sm btn-danger" onclick="deleteRule(${r.ID})">Del</button></td>
+            </tr>`).join('');
+    }
+
+    async function addRule() {
+        const pat = document.getElementById('new-rule-pattern').value;
+        const cat = document.getElementById('new-rule-cat').value;
+        const prio = parseInt(document.getElementById('new-rule-prio').value);
+
+        if (!pat || !cat) return alert("Pattern and Category are required");
+
+        await fetch('/api/rules/add', {
+            method: 'POST',
+            body: JSON.stringify({ Pattern: pat, Category: cat, Priority: prio })
+        });
+
+        // Clear inputs and reload
+        document.getElementById('new-rule-pattern').value = '';
+        document.getElementById('new-rule-cat').value = '';
+        const resp = await fetch('/api/rules');
+        rules = await resp.json();
+        renderRules();
+    }
+
+    async function deleteRule(id) {
+        if (!confirm("Delete this rule?")) return;
+        await fetch('/api/rules/delete', {
+            method: 'POST',
+            body: JSON.stringify({ ID: id })
+        });
+        const resp = await fetch('/api/rules');
+        rules = await resp.json();
+        renderRules();
+    }
+
+    // --- SYSTEM ---
     async function triggerSync() {
         const btn = document.getElementById('syncBtn');
         btn.innerText = "Syncing...";
         btn.disabled = true;
-        
         await fetch('/api/sync');
-        
-        // Wait 2s then reload data
         setTimeout(async () => {
             await loadData();
             btn.innerText = "Sync Now";
@@ -252,9 +311,9 @@
     function switchTab(tab) {
         document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
         event.target.classList.add('active');
-
         document.getElementById('view-transactions').classList.add('hidden');
         document.getElementById('view-accounts').classList.add('hidden');
+        document.getElementById('view-rules').classList.add('hidden');
         document.getElementById('view-' + tab).classList.remove('hidden');
     }
 </script>

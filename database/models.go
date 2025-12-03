@@ -41,6 +41,15 @@ type Transaction struct {
 	IsReviewed     bool `gorm:"default:false"`
 }
 
+// CategoryRule defines an automatic tagging rule
+type CategoryRule struct {
+	ID       uint   `gorm:"primaryKey"`
+	Priority int    `gorm:"default:10"` // Higher number = runs first
+	Pattern  string `gorm:"unique"`     // Regex string (e.g. "(?i)uber")
+	Category string // The target category (e.g. "Expenses:Transport")
+}
+
+// InitDB initializes the database and performs migrations
 func InitDB(dbPath string) (*gorm.DB, error) {
 	dir := filepath.Dir(dbPath)
 	if err := os.MkdirAll(dir, StorageDirPerms); err != nil {
@@ -52,7 +61,7 @@ func InitDB(dbPath string) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	err = db.AutoMigrate(&AccountMap{}, &Transaction{})
+	err = db.AutoMigrate(&AccountMap{}, &Transaction{}, &CategoryRule{})
 	if err != nil {
 		return nil, err
 	}

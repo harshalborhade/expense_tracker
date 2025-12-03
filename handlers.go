@@ -151,3 +151,22 @@ func handleGetCategories(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(categories)
 }
+
+// GET /api/rules
+func handleGetRules(w http.ResponseWriter, r *http.Request) {
+	var rules []database.CategoryRule
+	db.Order("priority desc").Find(&rules)
+	json.NewEncoder(w).Encode(rules)
+}
+
+// POST /api/rules
+func handleCreateRule(w http.ResponseWriter, r *http.Request) {
+	var rule database.CategoryRule
+	if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	db.Create(&rule)
+	ruleEngine.Reload() // Critical: Update memory!
+	w.Write([]byte(`{"status":"created"}`))
+}
