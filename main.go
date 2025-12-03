@@ -57,6 +57,7 @@ func main() {
 	http.HandleFunc("/api/categories", handleGetCategories)
 	http.HandleFunc("/api/rules", handleGetRules)       // GET to list
 	http.HandleFunc("/api/rules/add", handleCreateRule) // POST to add
+	http.HandleFunc("/api/rules/apply", handleApplyRules)
 
 	port := os.Getenv("PORT")
 	if port == "" {

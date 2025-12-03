@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -169,4 +170,25 @@ func handleCreateRule(w http.ResponseWriter, r *http.Request) {
 	db.Create(&rule)
 	ruleEngine.Reload() // Critical: Update memory!
 	w.Write([]byte(`{"status":"created"}`))
+}
+
+// POST /api/rules/apply
+func handleApplyRules(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+
+	count, err := ruleEngine.ApplyToExisting()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	// If changes were made, regenerate the export file
+	if count > 0 {
+		go exportService.Export()
+	}
+
+	w.Write([]byte(fmt.Sprintf(`{"status":"ok", "updated": %d}`, count)))
 }

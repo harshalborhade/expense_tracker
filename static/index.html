@@ -115,6 +115,11 @@
         <!-- 3. RULES TAB -->
         <div id="view-rules" class="hidden">
             <div class="card">
+                 <div style="padding: 16px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; background: #f8fafc;">
+                    <h3 style="margin:0; font-size:1rem;">Add New Rule</h3>
+                    <!-- NEW BUTTON -->
+                    <button class="btn" onclick="applyRulesToExisting()">Run Rules on Existing Transactions</button>
+                </div>
                 <!-- Add Rule Form -->
                 <div class="rule-form">
                     <div class="form-group" style="flex: 1;">
@@ -315,6 +320,24 @@
         document.getElementById('view-accounts').classList.add('hidden');
         document.getElementById('view-rules').classList.add('hidden');
         document.getElementById('view-' + tab).classList.remove('hidden');
+    }
+
+    async function applyRulesToExisting() {
+        const btn = event.target;
+        const originalText = btn.innerText;
+        btn.innerText = "Running...";
+        btn.disabled = true;
+
+        const resp = await fetch('/api/rules/apply', { method: 'POST' });
+        const data = await resp.json();
+
+        alert(`Rules applied! Updated ${data.updated} transactions.`);
+        
+        btn.innerText = originalText;
+        btn.disabled = false;
+        
+        // Reload transactions to see changes
+        loadData();
     }
 </script>
 

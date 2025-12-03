@@ -25,15 +25,12 @@ func NewRuleEngine(db *gorm.DB) *RuleEngine {
 	return re
 }
 
-// Reload fetches rules from DB and compiles regexes for performance
 func (re *RuleEngine) Reload() {
 	var dbRules []database.CategoryRule
-	// Sort by Priority DESC so specific rules override general ones
 	re.DB.Order("priority desc").Find(&dbRules)
 
 	var compiled []CompiledRule
 	for _, r := range dbRules {
-		// regex.MustCompile panics on bad regex, so we use Compile and log errors
 		regex, err := regexp.Compile(r.Pattern)
 		if err != nil {
 			fmt.Printf("[WARN] Invalid Regex Rule '%s': %v\n", r.Pattern, err)
@@ -48,7 +45,6 @@ func (re *RuleEngine) Reload() {
 	fmt.Printf("[INFO] Loaded %d auto-categorization rules\n", len(re.Rules))
 }
 
-// Apply returns the matched category or empty string
 func (re *RuleEngine) Apply(payee string) string {
 	for _, rule := range re.Rules {
 		if rule.Regex.MatchString(payee) {
@@ -56,4 +52,29 @@ func (re *RuleEngine) Apply(payee string) string {
 		}
 	}
 	return ""
+}
+
+// Run rules on all unreviewed transactions in the DB
+func (re *RuleEngine) ApplyToExisting() (int, error) {
+	var txs []database.Transaction
+
+	// Only touch transactions that haven't been manually reviewed yet
+	if err := re.DB.Where("is_reviewed = ?", false).Find(&txs).Error; err != nil {
+		return 0, err
+	}
+
+	count := 0
+	for _, tx := range txs {
+		match := re.Apply(tx.Payee)
+
+		// If we found a match, and it's different from the current category
+		if match != "" && match != tx.LedgerCategory {
+			tx.LedgerCategory = match
+			// We DO NOT set IsReviewed=true here.
+			// We want the user to still see them as "Pending" to verify the rule worked correctly.
+			re.DB.Save(&tx)
+			count++
+		}
+	}
+	return count, nil
 }
