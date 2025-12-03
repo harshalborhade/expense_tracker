@@ -101,7 +101,7 @@ func seedDefaultRules(db *gorm.DB) {
 			// {Priority: 10, Pattern: "(?i)starbucks|peet's", Category: "Expenses:Food:Coffee"},
 			// {Priority: 10, Pattern: "(?i)safeway|trader joe", Category: "Expenses:Food:Groceries"},
 			// {Priority: 10, Pattern: "(?i)netflix|spotify", Category: "Expenses:Entertainment:Subscriptions"},
-			// {Priority: 50, Pattern: "(?i)salary|payroll", Category: "Income:Salary"}, // High priority
+			{Priority: 50, Pattern: "(?i)salary|payroll", Category: "Income:Salary"}, // High priority
 		}
 		db.Create(&rules)
 	}
