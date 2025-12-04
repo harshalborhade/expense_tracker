@@ -1,0 +1,6 @@
+- [ ] Crete script ollama -> fix transaction category  
+- [ ] Improve UI -> create a frontend
+- [ ] Verify all transactions
+- [ ] implement pagination for transactions
+- [ ] implement search for transactions
+- [ ] git repo for ledger files

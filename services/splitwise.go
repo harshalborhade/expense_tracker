@@ -82,7 +82,7 @@ func (s *SplitwiseService) GetMyID() error {
 		return err
 	}
 	s.UserID = data.User.ID
-	fmt.Printf("👤 Logged in as Splitwise User ID: %d\n", s.UserID)
+	fmt.Printf("Logged in as Splitwise User ID: %d\n", s.UserID)
 	return nil
 }
 
@@ -203,7 +203,7 @@ func (s *SplitwiseService) Sync() error {
 		}
 	}
 
-	fmt.Printf("✅ Synced %d Splitwise Expenses\n", count)
+	fmt.Printf("Synced %d Splitwise Expenses\n", count)
 	return nil
 }
 

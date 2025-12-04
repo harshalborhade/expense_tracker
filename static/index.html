@@ -78,6 +78,14 @@
         <!-- 1. TRANSACTIONS TAB -->
         <div id="view-transactions">
             <div class="card">
+                <div style="padding: 12px 16px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; display: flex; gap: 10px; align-items: center;">
+                    <span style="font-size: 0.9rem; font-weight: 600; color: #64748b;">Filter by Account:</span>
+                    <select id="account-filter" onchange="renderTransactions()" style="padding: 6px; border-radius: 4px; border: 1px solid #cbd5e1; font-size: 0.9rem;">
+                        <option value="all">All Accounts</option>
+                        <!-- Options populated by JS -->
+                    </select>
+                </div>
+
                 <table>
                     <thead>
                         <tr>
@@ -181,12 +189,34 @@
             fetch('/api/accounts').then(r => r.json()).then(d => { accounts = d; renderAccounts(); }),
             fetch('/api/rules').then(r => r.json()).then(d => { rules = d; renderRules(); })
         ]);
+
+        // Fetch Accounts
+        const accResp = await fetch('/api/accounts');
+        accounts = await accResp.json();
+        
+        populateAccountFilter();
+        
+        renderAccounts();
+
+        // Fetch Transactions
+        const txResp = await fetch('/api/transactions');
+        transactions = await txResp.json();
+        renderTransactions();
     }
 
     // --- RENDER TRANSACTIONS ---
     function renderTransactions() {
         const tbody = document.getElementById('tx-body');
-        tbody.innerHTML = transactions.map(t => {
+        const filterVal = document.getElementById('account-filter').value;
+
+        // 1. Filter
+        const filtered = transactions.filter(t => {
+            if (filterVal === 'all') return true;
+            return t.account_name === filterVal;
+        });
+
+        // 2. Map & Render
+        tbody.innerHTML = filtered.map(t => {
             const amtClass = t.amount > 0 ? 'pos' : 'neg';
             const statusBadge = t.is_reviewed 
                 ? `<span class="badge badge-reviewed">OK</span>` 
@@ -338,6 +368,20 @@
         
         // Reload transactions to see changes
         loadData();
+    }
+
+    // Populate account filter dropdown
+    function populateAccountFilter() {
+        const select = document.getElementById('account-filter');
+        // Keep the "All" option, remove others
+        select.innerHTML = '<option value="all">All Accounts</option>';
+        
+        accounts.forEach(a => {
+            const opt = document.createElement('option');
+            opt.value = a.Name; // We filter by 'account_name' property in transaction DTO
+            opt.innerText = a.Name;
+            select.appendChild(opt);
+        });
     }
 </script>
 
