@@ -15,7 +15,7 @@ import (
 type SplitwiseService struct {
 	DB     *gorm.DB
 	APIKey string
-	UserID int // We need to know "Who am I?" to calculate shares
+	UserID int
 	Rules  *RuleEngine
 }
 
@@ -26,8 +26,6 @@ func NewSplitwiseService(db *gorm.DB, apiKey string, rules *RuleEngine) *Splitwi
 		Rules:  rules,
 	}
 }
-
-// --- JSON Structs for Parsing ---
 
 type SWUserResp struct {
 	User struct {
@@ -41,11 +39,12 @@ type SWExpensesResp struct {
 
 type SWExpense struct {
 	ID          int      `json:"id"`
-	Date        string   `json:"date"` // "2023-10-27T10:00:00Z"
+	Date        string   `json:"date"`
 	Description string   `json:"description"`
 	Cost        string   `json:"cost"`
 	Currency    string   `json:"currency_code"`
-	DeletedAt   *string  `json:"deleted_at"` // Null if active
+	Payment     bool     `json:"payment"` // Added this field
+	DeletedAt   *string  `json:"deleted_at"`
 	Users       []SWUser `json:"users"`
 }
 
@@ -56,14 +55,10 @@ type SWUser struct {
 	NetBalance string `json:"net_balance"`
 }
 
-// --- Methods ---
-
-// 1. Get Current User ID (Required to know which share is mine)
 func (s *SplitwiseService) GetMyID() error {
 	if s.UserID != 0 {
-		return nil // Already fetched
+		return nil
 	}
-
 	req, _ := http.NewRequest("GET", "https://secure.splitwise.com/api/v3.0/get_current_user", nil)
 	req.Header.Add("Authorization", "Bearer "+s.APIKey)
 
@@ -74,7 +69,7 @@ func (s *SplitwiseService) GetMyID() error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("Splitwise Auth Error: %d", resp.StatusCode)
+		return fmt.Errorf("splitwise auth error: %d", resp.StatusCode)
 	}
 
 	var data SWUserResp
@@ -82,25 +77,22 @@ func (s *SplitwiseService) GetMyID() error {
 		return err
 	}
 	s.UserID = data.User.ID
-	fmt.Printf("Logged in as Splitwise User ID: %d\n", s.UserID)
+	fmt.Printf("[INFO] Logged in as Splitwise User ID: %d\n", s.UserID)
 	return nil
 }
 
-// 2. Sync Expenses
 func (s *SplitwiseService) Sync() error {
 	if s.APIKey == "" {
 		return nil
 	}
 
-	// FIX 1: Ensure the Splitwise "Account" exists in the map
-	// This stops the "record not found" error during export
 	s.ensureAccountExists("splitwise_group", "Splitwise Shared Expenses")
 
 	if err := s.GetMyID(); err != nil {
 		return err
 	}
 
-	// Fetch expenses (Limit 50 for now, ideally use updated_after for incremental)
+	// Fetch recent expenses (limit 50 is usually enough for daily syncs)
 	req, _ := http.NewRequest("GET", "https://secure.splitwise.com/api/v3.0/get_expenses?limit=50", nil)
 	req.Header.Add("Authorization", "Bearer "+s.APIKey)
 
@@ -117,84 +109,99 @@ func (s *SplitwiseService) Sync() error {
 
 	count := 0
 	for _, exp := range data.Expenses {
-		// Skip deleted expenses
 		if exp.DeletedAt != nil {
 			continue
 		}
 
-		// Find My Share logic
-		var myShare float64
+		// --- NEW LOGIC: Handle Payments vs Expenses ---
+		var myAmount float64
 		var didIPay bool
+		involved := false
 
 		for _, u := range exp.Users {
 			if u.UserID == s.UserID {
-				// Parse strings to float
 				owed, _ := strconv.ParseFloat(u.OwedShare, 64)
 				paid, _ := strconv.ParseFloat(u.PaidShare, 64)
 
-				// "My Share" is what I consumed (OwedShare)
-				// Expense tracker usually tracks what you CONSUMED, regardless of who paid.
-				// We store this as negative (Expense)
-				if owed > 0 {
-					myShare = -owed
-				}
-
-				if paid > 0 {
-					didIPay = true
+				if exp.Payment {
+					// Settlement Logic
+					if paid > 0 {
+						// I Paid (Settling debt) -> Positive Amount (reduces liability)
+						myAmount = paid
+						involved = true
+					} else if owed > 0 {
+						// I Received (Others settling debt to me) -> Negative Amount (reduces asset)
+						myAmount = -owed
+						involved = true
+					}
+				} else {
+					// Expense Logic
+					if owed > 0 {
+						// I owe money -> Negative (increases liability)
+						myAmount = -owed
+						involved = true
+					}
+					if paid > 0 {
+						didIPay = true
+					}
 				}
 			}
 		}
 
-		// If I wasn't involved (share is 0), skip
-		if myShare == 0 {
+		// Skip if I'm not involved or the amount is effectively 0
+		if !involved || myAmount == 0 {
 			continue
 		}
 
-		// Parse Date (Splitwise format: 2023-10-27T14:47:06Z)
 		parsedTime, _ := time.Parse(time.RFC3339, exp.Date)
 		dateStr := parsedTime.Format("2006-01-02")
-
-		// Create ID (Prefix with sw_ to avoid collision)
 		txID := fmt.Sprintf("sw_%d", exp.ID)
 
-		// Note on Category:
-		// If I PAID, this transaction duplicates the Bank transaction.
-		// If I DID NOT PAY, this is a fresh expense.
-		// We flag this in the Provider or Notes for later logic.
 		providerLabel := "splitwise"
-		if didIPay {
+		// If I paid for a group expense (reimbursement), mark it special
+		// But if it's a direct payment (settlement), keep it standard "splitwise" so it shows up in main lists easily
+		if didIPay && !exp.Payment {
 			providerLabel = "splitwise_payer"
+		} else if exp.Payment {
+			providerLabel = "splitwise_payment"
 		}
 
-		// Upsert
+		// Check existence
 		var existing database.Transaction
 		result := s.DB.Limit(1).Find(&existing, "id = ?", txID)
 
 		if result.RowsAffected == 0 {
-
+			// Determine Category
 			cat := "Expenses:Uncategorized"
 
-			if match := s.Rules.Apply(exp.Description); match != "" {
-				cat = match
+			if exp.Payment {
+				// Force settlements to Transfer category
+				cat = "Transfers:Splitwise"
+			} else {
+				// Run Auto-Rules for normal expenses
+				if match := s.Rules.Apply(exp.Description); match != "" {
+					cat = match
+				}
 			}
 
-			// Record doesn't exist -> Create it
 			tx := database.Transaction{
 				ID:             txID,
 				Provider:       providerLabel,
 				AccountID:      "splitwise_group",
 				Date:           dateStr,
 				Payee:          exp.Description,
-				Amount:         myShare,
+				Amount:         myAmount,
 				Currency:       exp.Currency,
 				LedgerCategory: cat,
-				IsReviewed:     false,
+				Notes:          "Sync Import",
+				IsReviewed:     exp.Payment, // Auto-mark payments as reviewed since we know they are transfers
 			}
 			s.DB.Create(&tx)
 			count++
 		} else {
-			// Record exists -> Update it
-			existing.Amount = myShare
+			// Update existing (e.g. if amount changed in Splitwise)
+			// We generally trust Splitwise updates
+			existing.Amount = myAmount
 			existing.Date = dateStr
 			if !existing.IsReviewed {
 				existing.Payee = exp.Description
@@ -203,7 +210,9 @@ func (s *SplitwiseService) Sync() error {
 		}
 	}
 
-	fmt.Printf("Synced %d Splitwise Expenses\n", count)
+	if count > 0 {
+		fmt.Printf("[INFO] Synced %d new Splitwise items\n", count)
+	}
 	return nil
 }
 
@@ -215,7 +224,7 @@ func (s *SplitwiseService) ensureAccountExists(id, name string) {
 			ExternalID:    id,
 			Provider:      "splitwise",
 			Name:          name,
-			LedgerAccount: "Liabilities:Payable:Splitwise", // Default
+			LedgerAccount: "Liabilities:Payable:Splitwise",
 		})
 	}
 }

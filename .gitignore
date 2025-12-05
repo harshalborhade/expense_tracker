@@ -1,6 +1,7 @@
 .spec/
 data/
 my_transactions/
+ai_categorizer/
 
 .env
 *.exe
