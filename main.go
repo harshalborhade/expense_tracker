@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -20,43 +21,65 @@ var exportService *services.LedgerExportService
 var ruleEngine *services.RuleEngine
 
 func main() {
+	// 1. Define Flags
+	exportOnly := flag.Bool("export", false, "Regenerate Ledger files and exit")
+	noSync := flag.Bool("no-sync", false, "Start server without running initial network sync")
+	flag.Parse()
+
+	// 2. Load Env & DB
 	godotenv.Load()
 
-	// 1. Init DB
 	var err error
 	db, err = database.InitDB("data/ledger.db")
 	if err != nil {
 		log.Fatal("Database init failed:", err)
 	}
 
-	// 2. Init Services
+	// 3. Init Rule Engine
 	ruleEngine = services.NewRuleEngine(db)
 	seedDefaultRules(db)
 	ruleEngine.Reload()
 
+	// 4. Init Services
 	sfService = services.NewSimpleFinService(db, os.Getenv("SIMPLEFIN_ACCESS_TOKEN"), ruleEngine)
 	swService = services.NewSplitwiseService(db, os.Getenv("SPLITWISE_API_KEY"), ruleEngine)
 
 	exportPath := os.Getenv("LEDGER_FILE_PATH")
 	exportService = services.NewLedgerExportService(db, exportPath)
 
-	// 3. Run Sync on Startup
-	go runFullSync()
+	// 5. Handle Flags
+	if *exportOnly {
+		fmt.Println("[INFO] Export mode selected.")
+		if err := exportService.Export(); err != nil {
+			log.Fatalf("[ERROR] Export failed: %v", err)
+		}
+		fmt.Println("[SUCCESS] Ledger files generated.")
+		return // Exit immediately
+	}
 
-	// 4. Routes
+	if *noSync {
+		fmt.Println("[INFO] Skipping network sync (--no-sync).")
+		// We still regenerate the file from the local DB to ensure it matches
+		go func() {
+			fmt.Println("[INFO] Regenerating ledger files from local DB...")
+			exportService.Export()
+		}()
+	} else {
+		// Default behavior: Full Sync
+		go runFullSync()
+	}
 
-	// Serve the UI (Static Files)
+	// 6. Routes
 	http.Handle("/", http.FileServer(http.Dir("./static")))
 
-	// API Endpoints (Required for UI to work)
 	http.HandleFunc("/api/sync", handleSync)
 	http.HandleFunc("/api/transactions", handleGetTransactions)
 	http.HandleFunc("/api/transactions/update", handleUpdateTransaction)
 	http.HandleFunc("/api/accounts", handleGetAccounts)
 	http.HandleFunc("/api/accounts/update", handleUpdateAccount)
 	http.HandleFunc("/api/categories", handleGetCategories)
-	http.HandleFunc("/api/rules", handleGetRules)       // GET to list
-	http.HandleFunc("/api/rules/add", handleCreateRule) // POST to add
+
+	http.HandleFunc("/api/rules", handleGetRules)
 	http.HandleFunc("/api/rules/apply", handleApplyRules)
 
 	port := os.Getenv("PORT")
