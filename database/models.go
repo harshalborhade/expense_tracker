@@ -33,8 +33,10 @@ type Transaction struct {
 
 	Date     string
 	Payee    string
-	Amount   float64
-	Currency string
+	// AmountCents stores money as integer minor units (cents) to avoid
+	// floating-point representation errors. Positive = inflow, negative = outflow.
+	AmountCents int64
+	Currency    string
 
 	LedgerCategory string
 	Notes          string
@@ -66,11 +68,34 @@ func InitDB(dbPath string) (*gorm.DB, error) {
 		return nil, err
 	}
 
+	if err := migrateAmountToCents(db); err != nil {
+		return nil, err
+	}
+
 	return db, nil
 }
 
-// Helper to look up account mapping
-func GetLedgerAccountName(db *gorm.DB, externalID, defaultName string) string {
+// migrateAmountToCents converts the legacy floating-point `amount` column into
+// the integer `amount_cents` column exactly once. It is a no-op on fresh
+// databases (which never had an `amount` column) and is idempotent on
+// already-migrated databases, since rows that already have a non-zero
+// amount_cents are left untouched.
+func migrateAmountToCents(db *gorm.DB) error {
+	if !db.Migrator().HasColumn(&Transaction{}, "amount") {
+		return nil
+	}
+	// Newly added columns are NULL for pre-existing rows, and NULL = 0 is false
+	// in SQL, so we must match NULL explicitly. Rows already migrated have a
+	// non-zero amount_cents and are skipped, keeping this idempotent.
+	return db.Exec(
+		"UPDATE transactions SET amount_cents = CAST(ROUND(amount * 100) AS INTEGER) " +
+			"WHERE (amount_cents IS NULL OR amount_cents = 0) AND amount <> 0",
+	).Error
+}
+
+// GetLedgerAccountName resolves an external account ID to its mapped Ledger
+// account name, falling back to a FIXME placeholder when unmapped.
+func GetLedgerAccountName(db *gorm.DB, externalID string) string {
 	var mapping AccountMap
 	result := db.First(&mapping, "external_id = ?", externalID)
 

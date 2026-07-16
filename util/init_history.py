@@ -7,9 +7,9 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
 # --- Configuration ---
-CHUNK_DAYS = 60 
-HISTORY_DAYS = 365 * 2 # How far back to go total
-
+CHUNK_DAYS = 45
+# HISTORY_DAYS = 365 * 2 # How far back to go total
+HISTORY_DAYS = 120
 def main():
     # 1. Load Config
     load_dotenv('../.env')
@@ -114,15 +114,15 @@ def main():
                     tx_date = datetime.fromtimestamp(t["posted"]).strftime('%Y-%m-%d')
                     
                     cursor.execute("""
-                        INSERT OR IGNORE INTO transactions 
-                        (id, provider, account_id, date, payee, amount, currency, ledger_category, notes, is_reviewed)
+                        INSERT OR IGNORE INTO transactions
+                        (id, provider, account_id, date, payee, amount_cents, currency, ledger_category, notes, is_reviewed)
                         VALUES (?, 'simplefin', ?, ?, ?, ?, ?, 'Expenses:Uncategorized', '', 0)
                     """, (
-                        t["id"], 
-                        account_id, 
-                        tx_date, 
-                        t["description"], 
-                        float(t["amount"]), 
+                        t["id"],
+                        account_id,
+                        tx_date,
+                        t["description"],
+                        int(round(float(t["amount"]) * 100)),
                         currency
                     ))
                     

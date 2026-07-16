@@ -108,6 +108,7 @@ def main():
                         if paid > 0: did_i_pay = True
 
                 if my_share == 0: continue
+                my_share_cents = int(round(my_share * 100))
 
                 # Parse Date
                 date_str = exp["date"][:10] # Safe slice for YYYY-MM-DD
@@ -118,15 +119,15 @@ def main():
                 tx_id = f"sw_{exp['id']}"
 
                 cursor.execute("""
-                    INSERT OR IGNORE INTO transactions 
-                    (id, provider, account_id, date, payee, amount, currency, ledger_category, notes, is_reviewed)
+                    INSERT OR IGNORE INTO transactions
+                    (id, provider, account_id, date, payee, amount_cents, currency, ledger_category, notes, is_reviewed)
                     VALUES (?, ?, 'splitwise_group', ?, ?, ?, ?, 'Expenses:Uncategorized', ?, 0)
                 """, (
-                    tx_id, 
-                    provider_label, 
-                    date_str, 
-                    exp["description"], 
-                    my_share, 
+                    tx_id,
+                    provider_label,
+                    date_str,
+                    exp["description"],
+                    my_share_cents,
                     exp["currency_code"],
                     "Splitwise Import"
                 ))

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"text/template"
 	"time"
 
@@ -15,6 +16,9 @@ import (
 type LedgerExportService struct {
 	DB      *gorm.DB
 	RootDir string
+	// mu serializes Export() so concurrent callers (sync + UI edits both fire
+	// `go Export()`) cannot interleave writes and corrupt the journal files.
+	mu sync.Mutex
 }
 
 func NewLedgerExportService(db *gorm.DB, rootDir string) *LedgerExportService {
@@ -60,6 +64,9 @@ include {{ . }}/{{ . }}*.journal
 `
 
 func (s *LedgerExportService) Export() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	var transactions []database.Transaction
 
 	// Fetch all transactions
@@ -83,14 +90,15 @@ func (s *LedgerExportService) Export() error {
 		years[year] = true
 
 		// Ledger Logic (Same as before)
-		sourceAcct := database.GetLedgerAccountName(s.DB, tx.AccountID, "Unknown")
+		sourceAcct := database.GetLedgerAccountName(s.DB, tx.AccountID)
 		if tx.Provider == "splitwise" {
 			sourceAcct = "Liabilities:Payable:Splitwise"
 		} else if tx.Provider == "splitwise_payer" {
 			continue // Skip reimbursement records to avoid duplicates
 		}
 
-		amount := tx.Amount * -1 // Flip sign
+		// Convert integer cents back to a dollar amount and flip the sign.
+		amount := float64(tx.AmountCents) * -1 / 100
 
 		entry := LedgerEntry{
 			Date:          tx.Date,

@@ -116,6 +116,7 @@ def main():
                 amount = clean_amount(raw_amt)
                 if rules["invert_amount"]:
                     amount = amount * -1
+                amount_cents = int(round(amount * 100))
 
                 # --- 3. Generate ID Logic ---
                 # Create a signature for this transaction content
@@ -133,10 +134,10 @@ def main():
 
                 # Insert
                 cursor.execute("""
-                    INSERT OR IGNORE INTO transactions 
-                    (id, provider, account_id, date, payee, amount, currency, ledger_category, notes, is_reviewed)
+                    INSERT OR IGNORE INTO transactions
+                    (id, provider, account_id, date, payee, amount_cents, currency, ledger_category, notes, is_reviewed)
                     VALUES (?, 'manual_csv', ?, ?, ?, ?, 'USD', 'Expenses:Uncategorized', 'CSV Import', 0)
-                """, (tx_id, account_id, date_str, desc, amount))
+                """, (tx_id, account_id, date_str, desc, amount_cents))
                 
                 if cursor.rowcount > 0:
                     count += 1
