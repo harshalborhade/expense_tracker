@@ -95,20 +95,21 @@ def main():
             if not involved:
                 continue
 
+            amount_cents = int(round(amount * 100))
             date_str = exp["date"][:10]
             tx_id = f"sw_{exp['id']}" # Standard ID format
             payee = exp["description"] # e.g. "Payment to Bob"
 
             # Insert
             cursor.execute("""
-                INSERT OR IGNORE INTO transactions 
-                (id, provider, account_id, date, payee, amount, currency, ledger_category, notes, is_reviewed)
+                INSERT OR IGNORE INTO transactions
+                (id, provider, account_id, date, payee, amount_cents, currency, ledger_category, notes, is_reviewed)
                 VALUES (?, 'splitwise_payment', 'splitwise_group', ?, ?, ?, ?, ?, 'Settlement Import', 1)
             """, (
-                tx_id, 
-                date_str, 
-                payee, 
-                amount, 
+                tx_id,
+                date_str,
+                payee,
+                amount_cents,
                 exp["currency_code"],
                 TARGET_CATEGORY
             ))

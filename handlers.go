@@ -48,7 +48,7 @@ func handleGetTransactions(w http.ResponseWriter, r *http.Request) {
 			ID:             t.ID,
 			Date:           t.Date,
 			Payee:          t.Payee,
-			Amount:         t.Amount,
+			Amount:         float64(t.AmountCents) / 100,
 			Currency:       t.Currency,
 			AccountName:    acctName,
 			LedgerCategory: t.LedgerCategory,
@@ -160,16 +160,50 @@ func handleGetRules(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(rules)
 }
 
-// POST /api/rules
+// POST /api/rules/add
 func handleCreateRule(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+
 	var rule database.CategoryRule
 	if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
 		http.Error(w, err.Error(), 400)
 		return
 	}
-	db.Create(&rule)
+	if rule.Pattern == "" || rule.Category == "" {
+		http.Error(w, "Pattern and Category are required", 400)
+		return
+	}
+	if err := db.Create(&rule).Error; err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
 	ruleEngine.Reload() // Critical: Update memory!
 	w.Write([]byte(`{"status":"created"}`))
+}
+
+// POST /api/rules/delete
+func handleDeleteRule(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
+
+	var payload struct {
+		ID uint `json:"ID"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	if err := db.Delete(&database.CategoryRule{}, payload.ID).Error; err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	ruleEngine.Reload() // Critical: Update memory!
+	w.Write([]byte(`{"status":"deleted"}`))
 }
 
 // POST /api/rules/apply

@@ -172,7 +172,18 @@
     let transactions = [];
     let accounts = [];
     let rules = [];
-    
+
+    // Escape untrusted data before injecting into HTML. Payees/categories come
+    // from bank & Splitwise feeds we don't control, so this prevents stored XSS.
+    function esc(value) {
+        return String(value == null ? '' : value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
         loadData();
     });
@@ -224,15 +235,15 @@
 
             return `
             <tr>
-                <td style="color:#64748b; font-size:0.85rem;">${t.date}</td>
-                <td><input type="text" value="${t.payee}" onblur="updateTx('${t.id}', 'payee', this.value)"></td>
+                <td style="color:#64748b; font-size:0.85rem;">${esc(t.date)}</td>
+                <td><input type="text" value="${esc(t.payee)}" onblur="updateTx('${esc(t.id)}', 'payee', this.value)"></td>
                 <td class="amt ${amtClass}">${t.amount.toFixed(2)}</td>
                 <td>
-                    <input type="text" value="${t.category}" list="category-list" 
+                    <input type="text" value="${esc(t.category)}" list="category-list"
                            style="${t.is_reviewed ? '' : 'border-color:#f59e0b;'}"
-                           onblur="updateTx('${t.id}', 'category', this.value)">
+                           onblur="updateTx('${esc(t.id)}', 'category', this.value)">
                 </td>
-                <td style="font-size:0.8rem; color:#64748b;">${t.account_name}</td>
+                <td style="font-size:0.8rem; color:#64748b;">${esc(t.account_name)}</td>
                 <td>${statusBadge}</td>
             </tr>`;
         }).join('');
@@ -257,18 +268,18 @@
         const tbody = document.getElementById('acc-body');
         tbody.innerHTML = accounts.map(a => `
             <tr>
-                <td style="font-size:0.85rem; color:#64748b;">${a.Provider.toUpperCase()}</td>
-                <td><b>${a.Name}</b><br><span style="font-size:0.75rem; color:#94a3b8;">${a.ExternalID}</span></td>
-                <td class="amt">${a.CurrentBalance.toFixed(2)} ${a.Currency}</td>
+                <td style="font-size:0.85rem; color:#64748b;">${esc((a.Provider || '').toUpperCase())}</td>
+                <td><b>${esc(a.Name)}</b><br><span style="font-size:0.75rem; color:#94a3b8;">${esc(a.ExternalID)}</span></td>
+                <td class="amt">${(a.CurrentBalance || 0).toFixed(2)} ${esc(a.Currency)}</td>
                 <td>
                     <div class="type-select">
                         <span>Quick Set:</span>
-                        <span class="type-option" onclick="setMapping('${a.ExternalID}', 'Assets:US:Bank')">Bank</span>
-                        <span class="type-option" onclick="setMapping('${a.ExternalID}', 'Liabilities:US:CreditCard')">Credit Card</span>
+                        <span class="type-option" onclick="setMapping('${esc(a.ExternalID)}', 'Assets:US:Bank')">Bank</span>
+                        <span class="type-option" onclick="setMapping('${esc(a.ExternalID)}', 'Liabilities:US:CreditCard')">Credit Card</span>
                     </div>
-                    <input type="text" id="map-${a.ExternalID}" value="${a.LedgerAccount}">
+                    <input type="text" id="map-${esc(a.ExternalID)}" value="${esc(a.LedgerAccount)}">
                 </td>
-                <td><button class="btn btn-sm" onclick="saveAccount('${a.ExternalID}')">Save</button></td>
+                <td><button class="btn btn-sm" onclick="saveAccount('${esc(a.ExternalID)}')">Save</button></td>
             </tr>`).join('');
     }
 
@@ -292,9 +303,9 @@
         const tbody = document.getElementById('rules-body');
         tbody.innerHTML = rules.map(r => `
             <tr>
-                <td>${r.Priority}</td>
-                <td><code>${r.Pattern}</code></td>
-                <td>${r.Category}</td>
+                <td>${esc(r.Priority)}</td>
+                <td><code>${esc(r.Pattern)}</code></td>
+                <td>${esc(r.Category)}</td>
                 <td><button class="btn btn-sm btn-danger" onclick="deleteRule(${r.ID})">Del</button></td>
             </tr>`).join('');
     }
@@ -335,7 +346,7 @@
         const btn = document.getElementById('syncBtn');
         btn.innerText = "Syncing...";
         btn.disabled = true;
-        await fetch('/api/sync');
+        await fetch('/api/sync', { method: 'POST' });
         setTimeout(async () => {
             await loadData();
             btn.innerText = "Sync Now";

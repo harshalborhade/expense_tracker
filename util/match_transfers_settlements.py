@@ -19,8 +19,8 @@ def main():
     # Fetch all Splitwise Payments (Provider 'splitwise_payment')
     # We assume these are already set to 'Transfers:Splitwise' by the import script
     cursor.execute("""
-        SELECT id, date, amount, payee 
-        FROM transactions 
+        SELECT id, date, amount_cents, payee
+        FROM transactions
         WHERE provider = 'splitwise_payment'
         ORDER BY date DESC
     """)
@@ -33,15 +33,15 @@ def main():
 
     for settle in settlements:
         settle_date = datetime.strptime(settle['date'], "%Y-%m-%d")
-        settle_amt = float(settle['amount']) # Should be POSITIVE (e.g. 50.00)
-        
+        settle_amt = int(settle['amount_cents']) # Cents, should be POSITIVE (e.g. 5000)
+
         # We are looking for a Bank Transaction that is:
         # 1. Negative amount (Money Out) matching the settlement
         # 2. Date is within +/- tolerance
         # 3. Not already categorized as a Transfer (optional, but safer)
-        
-        target_amt = -settle_amt # Look for -50.00
-        
+
+        target_amt = -settle_amt # Look for -5000 cents
+
         # Date Window
         start_date = (settle_date - timedelta(days=DATE_TOLERANCE_DAYS)).strftime("%Y-%m-%d")
         end_date = (settle_date + timedelta(days=DATE_TOLERANCE_DAYS)).strftime("%Y-%m-%d")
@@ -49,9 +49,9 @@ def main():
         # Find candidate in Bank Transactions (provider='simplefin' or 'manual_csv')
         cursor.execute("""
             SELECT id, date, payee, ledger_category
-            FROM transactions 
+            FROM transactions
             WHERE (provider = 'simplefin' OR provider = 'manual_csv')
-              AND amount = ?
+              AND amount_cents = ?
               AND date BETWEEN ? AND ?
               AND ledger_category != 'Transfers:Splitwise'
         """, (target_amt, start_date, end_date))
@@ -61,7 +61,7 @@ def main():
         if len(candidates) == 1:
             # Perfect match found
             bank_tx = candidates[0]
-            print(f"   [MATCH] Settle: {settle['date']} ${settle_amt} <--> Bank: {bank_tx['date']} ({bank_tx['payee']})")
+            print(f"   [MATCH] Settle: {settle['date']} ${settle_amt/100:.2f} <--> Bank: {bank_tx['date']} ({bank_tx['payee']})")
             
             # Update Bank Transaction Category
             cursor.execute("""
@@ -84,7 +84,7 @@ def main():
                     break
             
             if best_match:
-                print(f"   [FUZZY MATCH] Settle: {settle['date']} ${settle_amt} <--> Bank: {best_match['date']} ({best_match['payee']})")
+                print(f"   [FUZZY MATCH] Settle: {settle['date']} ${settle_amt/100:.2f} <--> Bank: {best_match['date']} ({best_match['payee']})")
                 cursor.execute("""
                     UPDATE transactions 
                     SET ledger_category = 'Transfers:Splitwise', is_reviewed = 1 
@@ -92,7 +92,7 @@ def main():
                 """, (best_match['id'],))
                 matches_found += 1
             else:
-                print(f"   [SKIP] Ambiguous match for ${settle_amt} on {settle['date']}. Found {len(candidates)} candidates.")
+                print(f"   [SKIP] Ambiguous match for ${settle_amt/100:.2f} on {settle['date']}. Found {len(candidates)} candidates.")
 
     conn.commit()
     conn.close()

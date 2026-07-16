@@ -6,3 +6,8 @@ ai_categorizer/
 .env
 *.exe
 *.db
+
+# Local scratch / generated debris
+temp.txt
+ai_summary.json
+__pycache__/

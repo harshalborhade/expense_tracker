@@ -80,14 +80,19 @@ func main() {
 	http.HandleFunc("/api/categories", handleGetCategories)
 
 	http.HandleFunc("/api/rules", handleGetRules)
+	http.HandleFunc("/api/rules/add", handleCreateRule)
+	http.HandleFunc("/api/rules/delete", handleDeleteRule)
 	http.HandleFunc("/api/rules/apply", handleApplyRules)
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
+	// Bind to loopback only: this server exposes financial data and has no auth,
+	// so it must not be reachable from other machines on the network.
+	addr := "127.0.0.1:" + port
 	fmt.Printf("[INFO] Server running at http://localhost:%s\n", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	log.Fatal(http.ListenAndServe(addr, nil))
 }
 
 func runFullSync() {
@@ -110,6 +115,10 @@ func runFullSync() {
 }
 
 func handleSync(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", 405)
+		return
+	}
 	go runFullSync()
 	w.Write([]byte(`{"status":"sync_started"}`))
 }

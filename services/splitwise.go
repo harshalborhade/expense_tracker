@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -114,34 +115,40 @@ func (s *SplitwiseService) Sync() error {
 		}
 
 		// --- NEW LOGIC: Handle Payments vs Expenses ---
-		var myAmount float64
+		var myAmountCents int64
 		var didIPay bool
 		involved := false
 
 		for _, u := range exp.Users {
 			if u.UserID == s.UserID {
-				owed, _ := strconv.ParseFloat(u.OwedShare, 64)
-				paid, _ := strconv.ParseFloat(u.PaidShare, 64)
+				owed, errOwed := strconv.ParseFloat(u.OwedShare, 64)
+				paid, errPaid := strconv.ParseFloat(u.PaidShare, 64)
+				if errOwed != nil || errPaid != nil {
+					fmt.Printf("[WARN] Splitwise expense %d: invalid share values (owed=%q paid=%q)\n", exp.ID, u.OwedShare, u.PaidShare)
+					continue
+				}
+				owedCents := int64(math.Round(owed * 100))
+				paidCents := int64(math.Round(paid * 100))
 
 				if exp.Payment {
 					// Settlement Logic
-					if paid > 0 {
+					if paidCents > 0 {
 						// I Paid (Settling debt) -> Positive Amount (reduces liability)
-						myAmount = paid
+						myAmountCents = paidCents
 						involved = true
-					} else if owed > 0 {
+					} else if owedCents > 0 {
 						// I Received (Others settling debt to me) -> Negative Amount (reduces asset)
-						myAmount = -owed
+						myAmountCents = -owedCents
 						involved = true
 					}
 				} else {
 					// Expense Logic
-					if owed > 0 {
+					if owedCents > 0 {
 						// I owe money -> Negative (increases liability)
-						myAmount = -owed
+						myAmountCents = -owedCents
 						involved = true
 					}
-					if paid > 0 {
+					if paidCents > 0 {
 						didIPay = true
 					}
 				}
@@ -149,7 +156,7 @@ func (s *SplitwiseService) Sync() error {
 		}
 
 		// Skip if I'm not involved or the amount is effectively 0
-		if !involved || myAmount == 0 {
+		if !involved || myAmountCents == 0 {
 			continue
 		}
 
@@ -190,23 +197,28 @@ func (s *SplitwiseService) Sync() error {
 				AccountID:      "splitwise_group",
 				Date:           dateStr,
 				Payee:          exp.Description,
-				Amount:         myAmount,
+				AmountCents:    myAmountCents,
 				Currency:       exp.Currency,
 				LedgerCategory: cat,
 				Notes:          "Sync Import",
 				IsReviewed:     exp.Payment, // Auto-mark payments as reviewed since we know they are transfers
 			}
-			s.DB.Create(&tx)
+			if err := s.DB.Create(&tx).Error; err != nil {
+				fmt.Printf("[WARN] Failed to save Splitwise item %s: %v\n", txID, err)
+				continue
+			}
 			count++
 		} else {
 			// Update existing (e.g. if amount changed in Splitwise)
 			// We generally trust Splitwise updates
-			existing.Amount = myAmount
+			existing.AmountCents = myAmountCents
 			existing.Date = dateStr
 			if !existing.IsReviewed {
 				existing.Payee = exp.Description
 			}
-			s.DB.Save(&existing)
+			if err := s.DB.Save(&existing).Error; err != nil {
+				fmt.Printf("[WARN] Failed to update Splitwise item %s: %v\n", txID, err)
+			}
 		}
 	}
 

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -60,7 +61,7 @@ type SFTransaction struct {
 // Sync fetches data using the stored AccessURL
 func (s *SimpleFinService) Sync() error {
 	if s.AccessURL == "" {
-		return errors.New("SIMPLEFIN_ACCESS_URL is missing in .env")
+		return errors.New("SIMPLEFIN_ACCESS_TOKEN is missing in .env")
 	}
 
 	// Log the URL we are hitting
@@ -100,7 +101,13 @@ func (s *SimpleFinService) Sync() error {
 		for _, t := range acc.Transactions {
 			tm := time.Unix(t.Posted, 0)
 			dateStr := tm.Format("2006-01-02")
-			amt, _ := strconv.ParseFloat(t.Amount, 64)
+
+			amt, err := strconv.ParseFloat(t.Amount, 64)
+			if err != nil {
+				fmt.Printf("[WARN] Skipping transaction %s: invalid amount %q: %v\n", t.ID, t.Amount, err)
+				continue
+			}
+			cents := int64(math.Round(amt * 100))
 
 			var existing database.Transaction
 			result := s.DB.Limit(1).Find(&existing, "id = ?", t.ID)
@@ -120,20 +127,24 @@ func (s *SimpleFinService) Sync() error {
 					AccountID:      acc.ID,
 					Date:           dateStr,
 					Payee:          t.Description,
-					Amount:         amt,
+					AmountCents:    cents,
 					Currency:       acc.Currency,
 					LedgerCategory: cat,
 					IsReviewed:     false,
 				}
-				s.DB.Create(&tx)
+				if err := s.DB.Create(&tx).Error; err != nil {
+					fmt.Printf("[WARN] Failed to save transaction %s: %v\n", t.ID, err)
+				}
 			} else {
 				// Update existing
-				existing.Amount = amt
+				existing.AmountCents = cents
 				existing.Date = dateStr
 				if !existing.IsReviewed {
 					existing.Payee = t.Description
 				}
-				s.DB.Save(&existing)
+				if err := s.DB.Save(&existing).Error; err != nil {
+					fmt.Printf("[WARN] Failed to update transaction %s: %v\n", t.ID, err)
+				}
 			}
 		}
 	}
